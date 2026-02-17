@@ -1,4 +1,4 @@
-# Agentic Data Intelligence Studio (Project 2)
+# Agentic Data Intelligence Studio
 
 A production-style multi-agent AI system for Data Analyst and ML/AI roles.
 
