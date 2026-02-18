@@ -13,6 +13,8 @@ from backend.api.schemas import (
     ApprovePlanResponse,
     ChatRequest,
     ChatResponse,
+    ConfirmTargetRequest,
+    ConfirmTargetResponse,
     SetPhaseRequest,
     SetPhaseResponse,
     StartAnalysisRequest,
@@ -20,17 +22,124 @@ from backend.api.schemas import (
     StateResponse,
     UploadResponse,
 )
+from backend.agents.driver_ranking import DriverRankingEngine
+from backend.agents.hypothesis_generator import HypothesisGeneratorAgent
+from backend.agents.insight_synthesis import InsightSynthesisAgent
+from backend.agents.intent_parser import IntentParserAgent
 from backend.agents.execution_engine import ExecutionEngineAgent
 from backend.agents.missing_value_treatment import MissingValueTreatmentAgent
 from backend.agents.profiling import ProfilingAgent
 from backend.agents.dataset_summary import DatasetSummaryAgent
+from backend.agents.statistical_engine import StatisticalTestEngine
 from backend.config import settings
 from backend.core.graph import StudioGraph
-from backend.core.state import ConversationMessage, StudioPhase, StudioState
+from backend.core.state import ConversationMessage, ParsedIntent, StudioPhase, StudioState
 
 router = APIRouter()
 state_store: dict[str, StudioState] = {}
 active_connections: dict[str, WebSocket] = {}
+
+
+def _infer_target_type(state: StudioState, target_column: str) -> str:
+    if state.dataframe is None or target_column not in state.dataframe.columns:
+        return "classification"
+    series = state.dataframe[target_column].dropna()
+    if series.empty:
+        return "classification"
+    if series.dtype.kind in {"i", "u", "f"} and series.nunique() > 10:
+        return "regression"
+    return "classification"
+
+
+def _suggest_target_candidates(state: StudioState) -> list[str]:
+    profile = state.dataset_profile
+    df = state.dataframe
+    if profile is None or df is None:
+        return []
+
+    candidates: list[str] = []
+    class_keywords = ("status", "approved", "default", "churn", "label", "outcome")
+    reg_keywords = ("revenue", "income", "score", "amount", "risk")
+
+    for column in df.columns:
+        series = df[column].dropna()
+        if series.empty:
+            continue
+        col_l = column.lower()
+        if any(key in col_l for key in class_keywords + reg_keywords):
+            candidates.append(column)
+            continue
+        if series.dtype.kind not in {"i", "u", "f"}:
+            if 2 <= series.nunique() <= 6:
+                candidates.append(column)
+            continue
+        if series.nunique() <= 10:
+            candidates.append(column)
+            continue
+        std = float(series.std()) if series.shape[0] > 1 else 0.0
+        if std > 0 and series.nunique() >= max(20, int(0.05 * len(series))):
+            candidates.append(column)
+
+    return list(dict.fromkeys(candidates))[:8]
+
+
+def _resolve_targets(state: StudioState, parsed_intent: ParsedIntent) -> list[str]:
+    available = set(state.dataframe_columns or [])
+    explicit = [col for col in parsed_intent.target_candidates if col in available]
+    if explicit:
+        return explicit
+    return _suggest_target_candidates(state)
+
+
+async def _run_goal_driven_investigation(
+    state: StudioState,
+    user_question: str,
+    selected_target: str,
+) -> StudioState:
+    if state.dataframe is None or state.dataset_profile is None:
+        raise HTTPException(status_code=400, detail="Dataset context unavailable for investigation.")
+
+    state.target_column = selected_target
+    state.target_type = _infer_target_type(state, selected_target)  # classification | regression
+    state.current_phase = StudioPhase.INVESTIGATING
+
+    hypothesis_agent = HypothesisGeneratorAgent()
+    state.generated_hypotheses = hypothesis_agent.generate(
+        dataset_profile=state.dataset_profile,
+        target_column=selected_target,
+        target_type=state.target_type,
+    )
+
+    stats_engine = StatisticalTestEngine()
+    state.statistical_results = stats_engine.run(
+        dataframe=state.dataframe,
+        hypotheses=state.generated_hypotheses or [],
+        target_column=selected_target,
+        target_type=state.target_type,
+    )
+
+    ranking_engine = DriverRankingEngine()
+    state.ranked_drivers = ranking_engine.rank(state.statistical_results)
+    state.current_phase = StudioPhase.DRIVER_RANKED
+
+    synthesis_agent = InsightSynthesisAgent()
+    state.final_answer = await synthesis_agent.synthesize(
+        user_question=user_question,
+        target_column=selected_target,
+        target_type=state.target_type,
+        ranked_drivers=state.ranked_drivers or [],
+        statistical_summary=state.statistical_results,
+    )
+
+    state.conversation_history.append(
+        ConversationMessage(
+            role="assistant",
+            content=state.final_answer.direct_answer,
+            timestamp=datetime.now(timezone.utc),
+        )
+    )
+    state.current_phase = StudioPhase.ANSWER_READY
+    return state
 
 
 @router.post("/upload", response_model=UploadResponse)
@@ -74,22 +183,125 @@ async def start_analysis(request: StartAnalysisRequest):
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    """Progressive chat orchestration for intent parsing + plan readiness."""
+    """Goal-driven investigation orchestration from WAITING_FOR_INTENT."""
     state = state_store.get(request.session_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Session not found")
+    if state.dataset_profile is None:
+        raise HTTPException(status_code=400, detail="Dataset profile not found for this session.")
 
-    graph = StudioGraph()
-    graph.state = state
-    state = await graph.run_chat_turn(request.message)
+    state.user_intent = request.message
+    state.conversation_history.append(
+        ConversationMessage(
+            role="user",
+            content=request.message,
+            timestamp=datetime.now(timezone.utc),
+        )
+    )
+
+    if state.current_phase in {StudioPhase.WAITING_FOR_INTENT, StudioPhase.ANSWER_READY}:
+        parser = IntentParserAgent()
+        state.parsed_intent = await parser.parse(request.message, state.dataset_profile)
+        state.current_phase = StudioPhase.INTENT_PARSED
+
+        candidates = _resolve_targets(state, state.parsed_intent)
+        if not candidates:
+            state.current_phase = StudioPhase.TARGET_VALIDATION_REQUIRED
+            state.conversation_history.append(
+                ConversationMessage(
+                    role="assistant",
+                    content="I could not infer a reliable outcome column. Please select the target column to analyze.",
+                    timestamp=datetime.now(timezone.utc),
+                )
+            )
+        elif len(candidates) > 1:
+            state.current_phase = StudioPhase.TARGET_VALIDATION_REQUIRED
+            state.parsed_intent.target_candidates = candidates
+            state.conversation_history.append(
+                ConversationMessage(
+                    role="assistant",
+                    content=(
+                        "I detected multiple possible outcome columns: "
+                        f"{', '.join(candidates[:6])}. Which one should I analyze?"
+                    ),
+                    timestamp=datetime.now(timezone.utc),
+                )
+            )
+        else:
+            state = await _run_goal_driven_investigation(
+                state=state,
+                user_question=request.message,
+                selected_target=candidates[0],
+            )
+    elif state.current_phase == StudioPhase.TARGET_VALIDATION_REQUIRED:
+        state.conversation_history.append(
+            ConversationMessage(
+                role="assistant",
+                content="Please confirm the target from the dropdown before I continue the investigation.",
+                timestamp=datetime.now(timezone.utc),
+            )
+        )
+    else:
+        state.conversation_history.append(
+            ConversationMessage(
+                role="assistant",
+                content=f"Current phase is {state.current_phase.value}. Submit a goal when phase is WAITING_FOR_INTENT.",
+                timestamp=datetime.now(timezone.utc),
+            )
+        )
+
     state_store[request.session_id] = state
-
     return ChatResponse(
         session_id=request.session_id,
         phase=state.current_phase,
         conversation_history=state.conversation_history,
+        parsed_intent=state.parsed_intent,
+        target_column=state.target_column,
+        target_type=state.target_type,
+        generated_hypotheses=state.generated_hypotheses,
+        statistical_results=state.statistical_results,
+        ranked_drivers=state.ranked_drivers,
+        final_answer=state.final_answer,
         intent_classification=state.intent_classification,
         analysis_plan=state.analysis_plan,
+    )
+
+
+@router.post("/confirm-target", response_model=ConfirmTargetResponse)
+async def confirm_target(request: ConfirmTargetRequest):
+    state = state_store.get(request.session_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if state.current_phase != StudioPhase.TARGET_VALIDATION_REQUIRED:
+        raise HTTPException(status_code=400, detail=f"Target confirmation not allowed at phase: {state.current_phase.value}")
+    if state.dataframe is None or request.target_column not in state.dataframe.columns:
+        raise HTTPException(status_code=400, detail="Selected target column is not valid for this dataset.")
+
+    user_question = state.user_intent or "Investigate key drivers for the selected target."
+    state.conversation_history.append(
+        ConversationMessage(
+            role="user",
+            content=f"Target confirmed: {request.target_column}",
+            timestamp=datetime.now(timezone.utc),
+        )
+    )
+    state = await _run_goal_driven_investigation(
+        state=state,
+        user_question=user_question,
+        selected_target=request.target_column,
+    )
+    state_store[request.session_id] = state
+    return ConfirmTargetResponse(
+        session_id=request.session_id,
+        phase=state.current_phase,
+        conversation_history=state.conversation_history,
+        parsed_intent=state.parsed_intent,
+        target_column=state.target_column,
+        target_type=state.target_type,
+        generated_hypotheses=state.generated_hypotheses,
+        statistical_results=state.statistical_results,
+        ranked_drivers=state.ranked_drivers,
+        final_answer=state.final_answer,
     )
 
 
@@ -150,7 +362,10 @@ async def approve_plan(request: ApprovePlanRequest):
     state.current_phase = StudioPhase.EXECUTING
     state.execution_results = []
     state.hypothesis_set = None
-    state.statistical_results = []
+    state.generated_hypotheses = None
+    state.statistical_results = None
+    state.ranked_drivers = None
+    state.final_answer = None
     state.driver_ranking = None
     state.driver_insight_report = None
     state_store[request.session_id] = state
@@ -169,6 +384,11 @@ async def set_phase(request: SetPhaseRequest):
         StudioPhase.DATA_UPLOADED,
         StudioPhase.PROFILE_READY,
         StudioPhase.WAITING_FOR_INTENT,
+        StudioPhase.INTENT_PARSED,
+        StudioPhase.TARGET_VALIDATION_REQUIRED,
+        StudioPhase.INVESTIGATING,
+        StudioPhase.DRIVER_RANKED,
+        StudioPhase.ANSWER_READY,
         StudioPhase.PLAN_READY,
         StudioPhase.EXECUTING,
         StudioPhase.COMPLETED,
@@ -185,7 +405,10 @@ async def set_phase(request: SetPhaseRequest):
     if target_index < phase_order.index(StudioPhase.EXECUTING):
         state.execution_results = []
         state.hypothesis_set = None
-        state.statistical_results = []
+        state.generated_hypotheses = None
+        state.statistical_results = None
+        state.ranked_drivers = None
+        state.final_answer = None
         state.driver_ranking = None
         state.driver_insight_report = None
     state_store[request.session_id] = state
@@ -269,7 +492,14 @@ async def get_state(session_id: str):
         analysis_plan=state.analysis_plan,
         execution_results=state.execution_results,
         hypothesis_set=state.hypothesis_set,
+        parsed_intent=state.parsed_intent,
+        target_column=state.target_column,
+        target_type=state.target_type,
+        generated_hypotheses=state.generated_hypotheses,
         statistical_results=state.statistical_results,
+        ranked_drivers=state.ranked_drivers,
+        final_answer=state.final_answer,
+        legacy_statistical_results=state.driver_ranking.ranked_drivers if state.driver_ranking else [],
         driver_ranking=state.driver_ranking,
         driver_insight_report=state.driver_insight_report,
         missing_value_solutions=state.missing_value_solutions,

@@ -144,33 +144,36 @@ class ExecutionEngineAgent:
         )
         try:
             hypothesis_agent = HypothesisGeneratorAgent()
-            hypothesis_set = await hypothesis_agent.generate(
-                intent_classification=state.intent_classification,
+            if not state.intent_classification.target_columns:
+                return
+            target_column = state.intent_classification.target_columns[0]
+            target_type = "regression" if state.intent_classification.intent_type == IntentType.PREDICTIVE else "classification"
+            generated_hypotheses = hypothesis_agent.generate(
                 dataset_profile=state.dataset_profile,
+                target_column=target_column,
+                target_type=target_type,
             )
-            state.hypothesis_set = hypothesis_set
+            state.generated_hypotheses = generated_hypotheses
 
             stats_engine = StatisticalTestEngine()
-            statistical_results = stats_engine.run(
+            bundle = stats_engine.run(
                 dataframe=dataframe,
-                hypotheses=hypothesis_set,
-                intent_type=state.intent_classification.intent_type,
+                hypotheses=generated_hypotheses,
+                target_column=target_column,
+                target_type=target_type,
             )
-            state.statistical_results = statistical_results
+            state.statistical_results = bundle
 
             ranking_engine = DriverRankingEngine()
-            state.driver_ranking = ranking_engine.rank(statistical_results)
-
-            top_target = None
-            if state.driver_ranking.ranked_drivers:
-                top_target = state.driver_ranking.ranked_drivers[0].target
+            state.ranked_drivers = ranking_engine.rank(bundle)
 
             insight_agent = InsightSynthesisAgent()
-            state.driver_insight_report = await insight_agent.synthesize(
-                ranked_drivers=state.driver_ranking,
-                intent_type=state.intent_classification.intent_type,
-                sample_size=int(dataframe.shape[0]),
-                target_variable=top_target,
+            state.final_answer = await insight_agent.synthesize(
+                user_question=state.user_intent or "Analyze key drivers",
+                target_column=target_column,
+                target_type=target_type,
+                ranked_drivers=state.ranked_drivers or [],
+                statistical_summary=bundle,
             )
 
             await self._send_event(
@@ -181,8 +184,8 @@ class ExecutionEngineAgent:
                     "status": "SUCCESS",
                     "summary": "Generated ranked drivers and synthesized analytical interpretation.",
                     "metrics": {
-                        "hypotheses": len(hypothesis_set.hypotheses),
-                        "statistical_results": len(statistical_results),
+                        "hypotheses": len(generated_hypotheses),
+                        "statistical_results": len(bundle.results),
                     },
                 },
             )

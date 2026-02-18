@@ -11,6 +11,11 @@ class StudioPhase(str, Enum):
     DATA_UPLOADED = "DATA_UPLOADED"
     PROFILE_READY = "PROFILE_READY"
     WAITING_FOR_INTENT = "WAITING_FOR_INTENT"
+    INTENT_PARSED = "INTENT_PARSED"
+    TARGET_VALIDATION_REQUIRED = "TARGET_VALIDATION_REQUIRED"
+    INVESTIGATING = "INVESTIGATING"
+    DRIVER_RANKED = "DRIVER_RANKED"
+    ANSWER_READY = "ANSWER_READY"
     PLAN_READY = "PLAN_READY"
     EXECUTING = "EXECUTING"
     COMPLETED = "COMPLETED"
@@ -56,7 +61,6 @@ class DatasetSummaryReport(BaseModel):
     data_health_assessment: str
     statistical_highlights: List[str]
     anomaly_indicators: List[str]
-    recommended_starting_points: List[str]
     important_features: List[str]
     useful_statistics: List[str]
     confidence: float
@@ -85,6 +89,7 @@ class IntentType(str, Enum):
     DESCRIPTIVE = "DESCRIPTIVE"
     DIAGNOSTIC = "DIAGNOSTIC"
     PREDICTIVE = "PREDICTIVE"
+    EXPLANATORY = "EXPLANATORY"
     DATA_CLEANING = "DATA_CLEANING"
 
 
@@ -125,13 +130,31 @@ class ExecutionResult(BaseModel):
 
 
 class Hypothesis(BaseModel):
-    statement: str
-    predictor_column: str
-    target_column: Optional[str] = None
+    feature: str
+    type: Literal["correlation", "group_difference", "classification_signal"]
+    description: str
 
 
 class HypothesisSet(BaseModel):
     hypotheses: List[Hypothesis] = Field(default_factory=list)
+
+
+class StatisticalFeatureResult(BaseModel):
+    feature: str
+    test_type: str
+    p_value: Optional[float] = None
+    effect_size: Optional[float] = None
+    correlation: Optional[float] = None
+    feature_importance: Optional[float] = None
+    confidence_score: float = 0.0
+
+
+class StatisticalResultBundle(BaseModel):
+    target_column: str
+    target_type: Literal["classification", "regression"]
+    model_type_used: str
+    data_quality_flags: List[str] = Field(default_factory=list)
+    results: List[StatisticalFeatureResult] = Field(default_factory=list)
 
 
 class StatisticalResult(BaseModel):
@@ -142,6 +165,34 @@ class StatisticalResult(BaseModel):
     p_value: Optional[float] = None
     effect_size: Optional[float] = None
     feature_importance: Optional[float] = None
+
+
+class DriverScore(BaseModel):
+    feature: str
+    strength_score: float
+    importance_rank: int
+    statistical_significance: str
+    explanation_hint: str
+    p_value: Optional[float] = None
+    effect_size: Optional[float] = None
+    feature_importance: Optional[float] = None
+    correlation: Optional[float] = None
+
+
+class ParsedIntent(BaseModel):
+    intent_type: Literal["DESCRIPTIVE", "DIAGNOSTIC", "PREDICTIVE", "EXPLANATORY"]
+    target_candidates: List[str] = Field(default_factory=list)
+    requires_target: bool = True
+    reasoning: str
+
+
+class FinalAnalysisAnswer(BaseModel):
+    direct_answer: str
+    key_drivers_summary: str
+    evidence_points: List[str] = Field(default_factory=list)
+    business_impact: str
+    confidence_score: float
+    recommended_next_step: str
 
 
 class DriverRanking(BaseModel):
@@ -170,11 +221,17 @@ class StudioState(BaseModel):
     last_missing_treatment_result: Optional[MissingValueTreatmentResult] = None
 
     user_intent: Optional[str] = None
+    parsed_intent: Optional[ParsedIntent] = None
+    target_column: Optional[str] = None
+    target_type: Optional[Literal["classification", "regression"]] = None
+    generated_hypotheses: Optional[List[Hypothesis]] = None
+    statistical_results: Optional[StatisticalResultBundle] = None
+    ranked_drivers: Optional[List[DriverScore]] = None
+    final_answer: Optional[FinalAnalysisAnswer] = None
     intent_classification: Optional[IntentClassification] = None
     analysis_plan: Optional[AnalysisPlan] = None
     execution_results: List[ExecutionResult] = Field(default_factory=list)
     hypothesis_set: Optional[HypothesisSet] = None
-    statistical_results: List[StatisticalResult] = Field(default_factory=list)
     driver_ranking: Optional[DriverRanking] = None
     driver_insight_report: Optional[DriverInsightReport] = None
 

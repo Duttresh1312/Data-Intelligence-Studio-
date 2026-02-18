@@ -16,7 +16,6 @@ interface DatasetIntelligencePanelProps {
   lastMissingTreatmentResult: MissingValueTreatmentResult | null
   applyingSolutionId: string | null
   onApplyMissingValueSolution?: (solutionId: string) => void
-  onSuggestionClick?: (suggestion: string) => void
 }
 
 interface MissingItem {
@@ -32,6 +31,14 @@ interface MetricStatRow {
   max: number | null
   range: number | null
   variabilityScore: number | null
+}
+
+interface ActionableInsight {
+  id: string
+  title: string
+  signal: string
+  analysisAction: string
+  businessImpact: string
 }
 
 function toNumber(value: unknown): number | null {
@@ -89,58 +96,63 @@ function buildMetricRows(profile: DatasetProfile | null): MetricStatRow[] {
     .sort((a, b) => (b.variabilityScore ?? b.std ?? 0) - (a.variabilityScore ?? a.std ?? 0))
 }
 
-function buildStatUnderstanding(profile: DatasetProfile | null): string[] {
-  if (!profile) return []
-  const totalCells = profile.total_rows * profile.total_columns
-  const totalMissing = Object.values(profile.missing_percentage).reduce((acc, pct) => acc + (pct / 100) * profile.total_rows, 0)
-  const overallMissingRate = totalCells > 0 ? (totalMissing / totalCells) * 100 : 0
-  const duplicateRate = profile.total_rows > 0 ? (profile.duplicate_rows / profile.total_rows) * 100 : 0
-  const metricCount = Object.values(profile.column_roles).filter((role) => role === "NUMERIC_METRIC").length
-
-  return [
-    `Overall missingness is ${overallMissingRate.toFixed(2)}%. Lower values improve statistical reliability.`,
-    `Duplicate row rate is ${duplicateRate.toFixed(2)}%. High duplicate rates can overstate patterns.`,
-    `Detected ${metricCount} metric feature(s). More metric coverage enables stronger quantitative analysis.`,
-  ]
-}
-
 function buildActionableInsights(
   profile: DatasetProfile | null,
   rows: MetricStatRow[]
-): string[] {
+): ActionableInsight[] {
   if (!profile || rows.length === 0) return []
-  const insights: string[] = []
+  const insights: ActionableInsight[] = []
   const topRows = rows.slice(0, 3)
 
-  topRows.forEach((row) => {
+  topRows.forEach((row, index) => {
     const variability = row.variabilityScore ?? 0
     if (variability >= 0.6) {
-      insights.push(
-        `${row.column} shows high movement (std ${formatNumber(row.std)}, range ${formatNumber(row.range)}), so it is a strong candidate for volatility and risk-driver analysis.`
-      )
+      insights.push({
+        id: `${row.column}-${index}`,
+        title: `${row.column}: Volatility Driver`,
+        signal: `${row.column} shows high movement (std ${formatNumber(row.std)}, range ${formatNumber(row.range)}).`,
+        analysisAction: `Run distribution diagnostics, outlier checks, and segmented variance analysis on ${row.column}.`,
+        businessImpact: "Supports risk control, threshold setting, and faster detection of unstable operating conditions.",
+      })
     } else if (variability >= 0.3) {
-      insights.push(
-        `${row.column} has moderate spread (std ${formatNumber(row.std)}, range ${formatNumber(row.range)}), making it useful for segmentation and comparative performance analysis.`
-      )
+      insights.push({
+        id: `${row.column}-${index}`,
+        title: `${row.column}: Segmentation Signal`,
+        signal: `${row.column} has moderate spread (std ${formatNumber(row.std)}, range ${formatNumber(row.range)}).`,
+        analysisAction: `Use ${row.column} for cohort segmentation, benchmarking, and before/after performance comparisons.`,
+        businessImpact: "Enables targeted interventions and sharper prioritization across customer, team, or regional segments.",
+      })
     } else {
-      insights.push(
-        `${row.column} is relatively stable (std ${formatNumber(row.std)}), so it can be used as a baseline KPI for monitoring consistency over time.`
-      )
+      insights.push({
+        id: `${row.column}-${index}`,
+        title: `${row.column}: Baseline KPI`,
+        signal: `${row.column} is relatively stable (std ${formatNumber(row.std)}).`,
+        analysisAction: `Treat ${row.column} as a control metric for baseline tracking and drift monitoring.`,
+        businessImpact: "Improves measurement consistency and helps separate structural change from short-term noise.",
+      })
     }
   })
 
   const datetimeColumns = profile.datetime_columns
   if (datetimeColumns.length > 0) {
-    insights.push(
-      `${datetimeColumns[0]} enables trend and seasonality analysis, helping plan staffing/capacity decisions with better timing precision.`
-    )
+    insights.push({
+      id: "time-series-opportunity",
+      title: "Time-Series Opportunity",
+      signal: `${datetimeColumns[0]} introduces a usable temporal axis for trend and seasonality analysis.`,
+      analysisAction: `Create weekly/monthly trends and seasonal decomposition using ${datetimeColumns[0]}.`,
+      businessImpact: "Improves planning precision for demand, staffing, budget pacing, and operational timing.",
+    })
   }
 
   const metricCount = Object.values(profile.column_roles).filter((role) => role === "NUMERIC_METRIC").length
   if (metricCount >= 3) {
-    insights.push(
-      "Combining top metric drivers with segment-level comparisons can improve root-cause discovery and support targeted business interventions."
-    )
+    insights.push({
+      id: "cross-metric-driver",
+      title: "Cross-Metric Driver Discovery",
+      signal: `Detected ${metricCount} metric columns, allowing multivariate driver analysis.`,
+      analysisAction: "Prioritize correlation heatmaps and grouped comparisons across the top-variance metrics.",
+      businessImpact: "Helps identify the few controllable levers most likely to move strategic KPIs.",
+    })
   }
 
   return insights.slice(0, 5)
@@ -215,7 +227,6 @@ export default function DatasetIntelligencePanel({
   lastMissingTreatmentResult,
   applyingSolutionId,
   onApplyMissingValueSolution,
-  onSuggestionClick,
 }: DatasetIntelligencePanelProps) {
   if (!report) return null
   const [forceShowStats, setForceShowStats] = useState(false)
@@ -232,7 +243,6 @@ export default function DatasetIntelligencePanel({
   const advancedHighlights = buildAdvancedHighlights(datasetProfile)
   const metricRows = buildMetricRows(datasetProfile)
   const maxVariability = Math.max(...metricRows.map((item) => item.variabilityScore ?? 0), 0.0001)
-  const understandingRows = buildStatUnderstanding(datasetProfile)
   const actionableInsights = buildActionableInsights(datasetProfile, metricRows)
   const hasMissingValues = missingColumns.length > 0
   const showStatisticalSummary = !hasMissingValues || forceShowStats
@@ -359,18 +369,30 @@ export default function DatasetIntelligencePanel({
               <p className="text-xs font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-300">
                 Actionable Analysis Insights
               </p>
-              <div className="mt-2 space-y-2">
-                {actionableInsights.map((row) => (
-                  <p key={row} className="text-xs text-teal-800 dark:text-teal-200">
-                    - {row}
-                  </p>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                {actionableInsights.map((insight) => (
+                  <article
+                    key={insight.id}
+                    className="rounded-xl border border-teal-200/80 bg-white/90 p-3 shadow-sm dark:border-teal-900/50 dark:bg-slate-900/50"
+                  >
+                    <p className="text-sm font-semibold text-teal-800 dark:text-teal-200">{insight.title}</p>
+                    <p className="mt-2 text-xs text-slate-700 dark:text-slate-300">
+                      <span className="font-semibold text-slate-900 dark:text-slate-100">Signal:</span> {insight.signal}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-700 dark:text-slate-300">
+                      <span className="font-semibold text-slate-900 dark:text-slate-100">Recommended analysis:</span>{" "}
+                      {insight.analysisAction}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-700 dark:text-slate-300">
+                      <span className="font-semibold text-slate-900 dark:text-slate-100">Business impact:</span>{" "}
+                      {insight.businessImpact}
+                    </p>
+                  </article>
                 ))}
               </div>
-              {understandingRows.length > 0 && (
-                <p className="mt-3 rounded-lg bg-white/70 px-2 py-2 text-xs text-teal-900 dark:bg-slate-900/40 dark:text-teal-100">
-                  Business impact: these signals help prioritize the few variables most likely to improve decision quality and KPI outcomes when acted upon.
-                </p>
-              )}
+              <p className="mt-3 rounded-lg bg-white/70 px-2 py-2 text-xs text-teal-900 dark:bg-slate-900/40 dark:text-teal-100">
+                These insights prioritize the smallest set of high-leverage analyses likely to create measurable KPI movement.
+              </p>
             </div>
           </article>
           ) : (
@@ -489,24 +511,6 @@ export default function DatasetIntelligencePanel({
             </article>
           )}
 
-          <article className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/80">
-            <h4 className="flex items-center gap-2 text-sm font-semibold">
-              <Lightbulb size={16} className="text-teal-500" />
-              Suggested Starting Points
-            </h4>
-            <div className="mt-3 space-y-2">
-              {report.recommended_starting_points.slice(0, 4).map((suggestion, index) => (
-                <button
-                  key={`${suggestion}-${index}`}
-                  type="button"
-                  onClick={() => onSuggestionClick?.(suggestion)}
-                  className="w-full rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-left text-sm text-teal-900 transition hover:bg-teal-100 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:bg-teal-950/70"
-                >
-                  {suggestion}
-                </button>
-              ))}
-            </div>
-          </article>
         </div>
       </div>
 

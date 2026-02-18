@@ -38,6 +38,11 @@ function PhaseContent() {
     case "PROFILE_READY":
       return <DatasetSummary />
     case "WAITING_FOR_INTENT":
+    case "INTENT_PARSED":
+    case "TARGET_VALIDATION_REQUIRED":
+    case "INVESTIGATING":
+    case "DRIVER_RANKED":
+    case "ANSWER_READY":
     case "PLAN_READY":
     case "EXECUTING":
     case "COMPLETED":

@@ -38,7 +38,8 @@ class InitialInsightAgent:
                 "data_health_assessment": "Fallback executed without profile context.",
                 "statistical_highlights": ["Load dataset and rerun profiling pipeline."],
                 "anomaly_indicators": ["No anomaly assessment available."],
-                "recommended_starting_points": ["Run profiling to restore structured context."],
+                "important_features": [],
+                "useful_statistics": [],
                 "confidence": 0.25,
             }
 
@@ -87,6 +88,10 @@ class InitialInsightAgent:
             "data_health_assessment": quality_flags[0] if quality_flags else "No major quality flags.",
             "statistical_highlights": directions,
             "anomaly_indicators": anomaly_signals,
-            "recommended_starting_points": directions,
+            "important_features": profile.numeric_columns[:6] + profile.categorical_columns[:4],
+            "useful_statistics": [
+                "Distribution summary for numeric metrics.",
+                "Segment-level comparisons across categorical dimensions.",
+            ],
             "confidence": 0.62,
         }

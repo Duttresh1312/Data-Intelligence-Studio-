@@ -104,7 +104,6 @@ class DatasetSummaryAgent:
                 "data_health_assessment": "Unable to assess data health without profile metadata.",
                 "statistical_highlights": ["No statistical highlights available."],
                 "anomaly_indicators": ["No anomaly indicators available."],
-                "recommended_starting_points": ["Re-run upload and profiling to regenerate metadata context."],
                 "important_features": [],
                 "useful_statistics": [],
                 "confidence": 0.2,
@@ -170,21 +169,6 @@ class DatasetSummaryAgent:
             data_health_parts.append("Core health signals are stable with low duplicates and manageable missingness.")
         data_health_assessment = " ".join(data_health_parts)
 
-        starting_points = [
-            f"Start with domain-oriented KPI baselining for {domain.domain_label}.",
-            "Run segmented summaries on dimension columns against key metric columns.",
-        ]
-        if profile.datetime_columns:
-            starting_points.append(
-                f"Build trend views over datetime field(s): {', '.join(profile.datetime_columns[:3])}."
-            )
-        if profile.potential_primary_keys:
-            starting_points.append(
-                f"Use likely identifier(s) {', '.join(profile.potential_primary_keys[:3])} for record-level tracing."
-            )
-        if missing_over_10:
-            starting_points.append("Prioritize missing-data treatment before diagnostic or predictive workflows.")
-
         executive_summary = (
             f"This dataset is best described as {domain.domain_label.lower()} data with "
             f"{profile.total_rows} rows and {profile.total_columns} columns. "
@@ -214,7 +198,6 @@ class DatasetSummaryAgent:
             "data_health_assessment": data_health_assessment,
             "statistical_highlights": statistical_highlights[:5],
             "anomaly_indicators": anomaly_indicators[:5],
-            "recommended_starting_points": starting_points[:5],
             "important_features": important_features[:10],
             "useful_statistics": useful_statistics[:8],
             "confidence": 0.7,

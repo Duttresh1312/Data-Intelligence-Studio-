@@ -2,6 +2,7 @@ import type {
   ApplyMissingValueSolutionResponse,
   ApprovePlanResponse,
   ChatResponse,
+  ConfirmTargetResponse,
   SetPhaseResponse,
   StartAnalysisResponse,
   StateResponse,
@@ -69,6 +70,19 @@ export async function approvePlan(sessionId: string): Promise<ApprovePlanRespons
   return res.json()
 }
 
+export async function confirmTarget(sessionId: string, targetColumn: string): Promise<ConfirmTargetResponse> {
+  const res = await fetch(`${API_BASE}/confirm-target`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId, target_column: targetColumn }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(getDetail(err))
+  }
+  return res.json()
+}
+
 export async function setSessionPhase(sessionId: string, phase: StudioPhase): Promise<SetPhaseResponse> {
   const res = await fetch(`${API_BASE}/set-phase`, {
     method: "POST",
@@ -124,6 +138,11 @@ export const phaseOrder: StudioPhase[] = [
   "DATA_UPLOADED",
   "PROFILE_READY",
   "WAITING_FOR_INTENT",
+  "INTENT_PARSED",
+  "TARGET_VALIDATION_REQUIRED",
+  "INVESTIGATING",
+  "DRIVER_RANKED",
+  "ANSWER_READY",
   "PLAN_READY",
   "EXECUTING",
   "COMPLETED",

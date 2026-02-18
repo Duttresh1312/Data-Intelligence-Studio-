@@ -1,101 +1,72 @@
 from __future__ import annotations
 
-from backend.app.llm.client import LLMClient
-from backend.app.llm.prompts import build_hypothesis_system_prompt, build_hypothesis_user_prompt
-from backend.core.state import ColumnRole, DatasetProfile, Hypothesis, HypothesisSet, IntentClassification
+from backend.core.state import ColumnRole, DatasetProfile, Hypothesis
 
 
 class HypothesisGeneratorAgent:
-    def __init__(self, llm_client: LLMClient | None = None) -> None:
-        self.llm_client = llm_client or LLMClient()
-        self.llm_client.register_fallback(HypothesisSet, self._fallback_hypotheses)
-        self._profile: DatasetProfile | None = None
-        self._intent: IntentClassification | None = None
-
-    async def generate(
+    def generate(
         self,
-        intent_classification: IntentClassification,
         dataset_profile: DatasetProfile,
-    ) -> HypothesisSet:
-        self._profile = dataset_profile
-        self._intent = intent_classification
-        return await self.llm_client.generate_structured(
-            system_prompt=build_hypothesis_system_prompt(),
-            user_prompt=build_hypothesis_user_prompt(intent_classification, dataset_profile),
-            response_model=HypothesisSet,
-            temperature=0.2,
-        )
-
-    async def _fallback_hypotheses(self, _system_prompt: str, _user_prompt: str) -> dict:
-        if self._profile is None:
-            return {"hypotheses": []}
-
-        profile = self._profile
-        target = None
-        if self._intent and self._intent.target_columns:
-            for col in self._intent.target_columns:
-                if col in profile.column_roles:
-                    target = col
-                    break
-
-        metric_columns = [c for c, role in profile.column_roles.items() if role == ColumnRole.NUMERIC_METRIC]
-        dimension_columns = [c for c, role in profile.column_roles.items() if role == ColumnRole.CATEGORICAL_DIMENSION]
-        datetime_columns = [c for c, role in profile.column_roles.items() if role == ColumnRole.DATETIME]
-
+        target_column: str,
+        target_type: str,
+    ) -> list[Hypothesis]:
         hypotheses: list[Hypothesis] = []
-        if target and target in metric_columns:
-            for predictor in metric_columns:
-                if predictor == target:
-                    continue
+        roles = dataset_profile.column_roles
+
+        numeric_features = [
+            col for col, role in roles.items() if role == ColumnRole.NUMERIC_METRIC and col != target_column
+        ]
+        categorical_features = [
+            col
+            for col, role in roles.items()
+            if role in (ColumnRole.CATEGORICAL_DIMENSION, ColumnRole.BOOLEAN, ColumnRole.TEXT) and col != target_column
+        ]
+
+        if target_type == "classification":
+            for feature in numeric_features[:8]:
                 hypotheses.append(
                     Hypothesis(
-                        statement=f"{predictor} is associated with variation in {target}.",
-                        predictor_column=predictor,
-                        target_column=target,
+                        feature=feature,
+                        type="classification_signal",
+                        description=f"Variation in {feature} is associated with class shifts in {target_column}.",
                     )
                 )
-                if len(hypotheses) >= 3:
-                    break
-
-        if target and target in metric_columns and not hypotheses:
-            for predictor in dimension_columns:
+            for feature in categorical_features[:8]:
                 hypotheses.append(
                     Hypothesis(
-                        statement=f"Groups in {predictor} produce different average values of {target}.",
-                        predictor_column=predictor,
-                        target_column=target,
+                        feature=feature,
+                        type="group_difference",
+                        description=f"Category membership in {feature} changes class distribution of {target_column}.",
                     )
                 )
-                if len(hypotheses) >= 3:
-                    break
-
-        if not hypotheses and metric_columns:
-            base_target = metric_columns[0]
-            for predictor in metric_columns[1:4]:
+        else:
+            for feature in numeric_features[:10]:
                 hypotheses.append(
                     Hypothesis(
-                        statement=f"{predictor} has a measurable relationship with {base_target}.",
-                        predictor_column=predictor,
-                        target_column=base_target,
+                        feature=feature,
+                        type="correlation",
+                        description=f"{feature} has measurable correlation with {target_column}.",
+                    )
+                )
+            for feature in categorical_features[:8]:
+                hypotheses.append(
+                    Hypothesis(
+                        feature=feature,
+                        type="group_difference",
+                        description=f"Mean {target_column} differs across groups in {feature}.",
                     )
                 )
 
-        if not hypotheses and dimension_columns and metric_columns:
-            hypotheses.append(
-                Hypothesis(
-                    statement=f"{dimension_columns[0]} segments explain changes in {metric_columns[0]}.",
-                    predictor_column=dimension_columns[0],
-                    target_column=metric_columns[0],
+        # Ensure deterministic non-empty output when possible.
+        if not hypotheses:
+            fallback_features = [col for col in roles.keys() if col != target_column][:6]
+            for feature in fallback_features:
+                hypotheses.append(
+                    Hypothesis(
+                        feature=feature,
+                        type="correlation" if target_type == "regression" else "classification_signal",
+                        description=f"{feature} may influence {target_column} and should be statistically tested.",
+                    )
                 )
-            )
 
-        if not hypotheses and datetime_columns and metric_columns:
-            hypotheses.append(
-                Hypothesis(
-                    statement=f"Temporal progression in {datetime_columns[0]} influences {metric_columns[0]}.",
-                    predictor_column=datetime_columns[0],
-                    target_column=metric_columns[0],
-                )
-            )
-
-        return {"hypotheses": [item.model_dump() for item in hypotheses[:5]]}
+        return hypotheses[:20]

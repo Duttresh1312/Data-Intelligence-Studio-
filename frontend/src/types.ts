@@ -3,6 +3,11 @@ export type StudioPhase =
   | "DATA_UPLOADED"
   | "PROFILE_READY"
   | "WAITING_FOR_INTENT"
+  | "INTENT_PARSED"
+  | "TARGET_VALIDATION_REQUIRED"
+  | "INVESTIGATING"
+  | "DRIVER_RANKED"
+  | "ANSWER_READY"
   | "PLAN_READY"
   | "EXECUTING"
   | "COMPLETED"
@@ -46,7 +51,6 @@ export interface DatasetSummaryReport {
   data_health_assessment: string
   statistical_highlights: string[]
   anomaly_indicators: string[]
-  recommended_starting_points: string[]
   important_features: string[]
   useful_statistics: string[]
   confidence: number
@@ -71,7 +75,7 @@ export interface MissingValueTreatmentResult {
   summary: string
 }
 
-export type IntentType = "DESCRIPTIVE" | "DIAGNOSTIC" | "PREDICTIVE" | "DATA_CLEANING"
+export type IntentType = "DESCRIPTIVE" | "DIAGNOSTIC" | "PREDICTIVE" | "EXPLANATORY" | "DATA_CLEANING"
 
 export type OperationType =
   | "SUMMARY"
@@ -87,6 +91,13 @@ export interface IntentClassification {
   target_columns: string[]
   explanation: string
   confidence: number
+}
+
+export interface ParsedIntent {
+  intent_type: "DESCRIPTIVE" | "DIAGNOSTIC" | "PREDICTIVE" | "EXPLANATORY"
+  target_candidates: string[]
+  requires_target: boolean
+  reasoning: string
 }
 
 export interface PlanStep {
@@ -109,13 +120,23 @@ export interface ExecutionResult {
 }
 
 export interface Hypothesis {
-  statement: string
-  predictor_column: string
-  target_column?: string | null
+  feature: string
+  type: "correlation" | "group_difference" | "classification_signal"
+  description: string
 }
 
 export interface HypothesisSet {
   hypotheses: Hypothesis[]
+}
+
+export interface StatisticalFeatureResult {
+  feature: string
+  test_type: string
+  p_value?: number | null
+  effect_size?: number | null
+  correlation?: number | null
+  feature_importance?: number | null
+  confidence_score: number
 }
 
 export interface StatisticalResult {
@@ -126,6 +147,35 @@ export interface StatisticalResult {
   p_value?: number | null
   effect_size?: number | null
   feature_importance?: number | null
+}
+
+export interface StatisticalResultBundle {
+  target_column: string
+  target_type: "classification" | "regression"
+  model_type_used: string
+  data_quality_flags: string[]
+  results: StatisticalFeatureResult[]
+}
+
+export interface DriverScore {
+  feature: string
+  strength_score: number
+  importance_rank: number
+  statistical_significance: string
+  explanation_hint: string
+  p_value?: number | null
+  effect_size?: number | null
+  feature_importance?: number | null
+  correlation?: number | null
+}
+
+export interface FinalAnalysisAnswer {
+  direct_answer: string
+  key_drivers_summary: string
+  evidence_points: string[]
+  business_impact: string
+  confidence_score: number
+  recommended_next_step: string
 }
 
 export interface DriverRanking {
@@ -160,8 +210,28 @@ export interface ChatResponse {
   session_id: string
   phase: StudioPhase
   conversation_history: ConversationMessage[]
+  parsed_intent?: ParsedIntent | null
+  target_column?: string | null
+  target_type?: "classification" | "regression" | null
+  generated_hypotheses?: Hypothesis[] | null
+  statistical_results?: StatisticalResultBundle | null
+  ranked_drivers?: DriverScore[] | null
+  final_answer?: FinalAnalysisAnswer | null
   intent_classification?: IntentClassification | null
   analysis_plan?: AnalysisPlan | null
+}
+
+export interface ConfirmTargetResponse {
+  session_id: string
+  phase: StudioPhase
+  conversation_history: ConversationMessage[]
+  parsed_intent?: ParsedIntent | null
+  target_column?: string | null
+  target_type?: "classification" | "regression" | null
+  generated_hypotheses?: Hypothesis[] | null
+  statistical_results?: StatisticalResultBundle | null
+  ranked_drivers?: DriverScore[] | null
+  final_answer?: FinalAnalysisAnswer | null
 }
 
 export interface ApprovePlanResponse {
@@ -205,11 +275,17 @@ export interface StateResponse {
   dataset_profile?: DatasetProfile | null
   domain_classification?: DomainClassification | null
   dataset_summary_report?: DatasetSummaryReport | null
+  parsed_intent?: ParsedIntent | null
+  target_column?: string | null
+  target_type?: "classification" | "regression" | null
+  generated_hypotheses?: Hypothesis[] | null
+  statistical_results?: StatisticalResultBundle | null
+  ranked_drivers?: DriverScore[] | null
+  final_answer?: FinalAnalysisAnswer | null
   intent_classification?: IntentClassification | null
   analysis_plan?: AnalysisPlan | null
   execution_results: ExecutionResult[]
   hypothesis_set?: HypothesisSet | null
-  statistical_results: StatisticalResult[]
   driver_ranking?: DriverRanking | null
   driver_insight_report?: DriverInsightReport | null
   missing_value_solutions: MissingValueSolution[]

@@ -168,3 +168,42 @@ def build_driver_insight_user_prompt(payload: dict) -> str:
         "Generate a DriverInsightReport from this JSON:\n"
         f"{json.dumps(payload, ensure_ascii=True)}"
     )
+
+
+def build_phase6_intent_parser_system_prompt() -> str:
+    return (
+        "You classify investigation intent for an AI analytics system. "
+        "Output strictly valid JSON matching ParsedIntent. "
+        "Use only provided metadata and user message. "
+        "Do not invent columns, code, or statistics."
+    )
+
+
+def build_phase6_intent_parser_user_prompt(user_message: str, profile: DatasetProfile) -> str:
+    payload = {
+        "user_message": user_message,
+        "dataset_profile": profile.model_dump(),
+        "column_roles": {name: role.value for name, role in profile.column_roles.items()},
+    }
+    return (
+        "Classify the intent and target candidates from this JSON:\n"
+        f"{json.dumps(payload, ensure_ascii=True)}"
+    )
+
+
+def build_phase6_insight_synthesis_system_prompt() -> str:
+    return (
+        "You are a senior analytics lead. "
+        "Generate an evidence-based answer using only supplied statistical outputs. "
+        "Must reference at least one numeric statistic. "
+        "Must mention the strongest driver. "
+        "If signal is weak, explicitly state uncertainty. "
+        "No generic language. Return JSON only."
+    )
+
+
+def build_phase6_insight_synthesis_user_prompt(payload: dict) -> str:
+    return (
+        "Generate FinalAnalysisAnswer from this JSON:\n"
+        f"{json.dumps(payload, ensure_ascii=True)}"
+    )

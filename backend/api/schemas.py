@@ -9,14 +9,19 @@ from backend.core.state import (
     ConversationMessage,
     DatasetProfile,
     DatasetSummaryReport,
+    DriverScore,
     DriverInsightReport,
     DriverRanking,
     DomainClassification,
     ExecutionResult,
+    FinalAnalysisAnswer,
+    Hypothesis,
     HypothesisSet,
     IntentClassification,
     MissingValueSolution,
     MissingValueTreatmentResult,
+    ParsedIntent,
+    StatisticalResultBundle,
     StatisticalResult,
     StudioPhase,
 )
@@ -51,8 +56,33 @@ class ChatResponse(BaseModel):
     session_id: str
     phase: StudioPhase
     conversation_history: list[ConversationMessage]
+    parsed_intent: ParsedIntent | None = None
+    target_column: str | None = None
+    target_type: str | None = None
+    generated_hypotheses: list[Hypothesis] | None = None
+    statistical_results: StatisticalResultBundle | None = None
+    ranked_drivers: list[DriverScore] | None = None
+    final_answer: FinalAnalysisAnswer | None = None
     intent_classification: IntentClassification | None = None
     analysis_plan: AnalysisPlan | None = None
+
+
+class ConfirmTargetRequest(BaseModel):
+    session_id: str
+    target_column: str
+
+
+class ConfirmTargetResponse(BaseModel):
+    session_id: str
+    phase: StudioPhase
+    conversation_history: list[ConversationMessage]
+    parsed_intent: ParsedIntent | None = None
+    target_column: str | None = None
+    target_type: str | None = None
+    generated_hypotheses: list[Hypothesis] | None = None
+    statistical_results: StatisticalResultBundle | None = None
+    ranked_drivers: list[DriverScore] | None = None
+    final_answer: FinalAnalysisAnswer | None = None
 
 
 class ApprovePlanRequest(BaseModel):
@@ -102,7 +132,14 @@ class StateResponse(BaseModel):
     analysis_plan: AnalysisPlan | None = None
     execution_results: list[ExecutionResult]
     hypothesis_set: HypothesisSet | None = None
-    statistical_results: list[StatisticalResult]
+    parsed_intent: ParsedIntent | None = None
+    target_column: str | None = None
+    target_type: str | None = None
+    generated_hypotheses: list[Hypothesis] | None = None
+    statistical_results: StatisticalResultBundle | None = None
+    ranked_drivers: list[DriverScore] | None = None
+    final_answer: FinalAnalysisAnswer | None = None
+    legacy_statistical_results: list[StatisticalResult] = []
     driver_ranking: DriverRanking | None = None
     driver_insight_report: DriverInsightReport | None = None
     missing_value_solutions: list[MissingValueSolution]
