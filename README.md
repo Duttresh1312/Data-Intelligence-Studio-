@@ -1,80 +1,135 @@
 # Agentic Data Intelligence Studio
 
-A production-style multi-agent AI system for Data Analyst and ML/AI roles.
+Agentic Data Intelligence Studio is a goal-driven analytics platform designed for structured datasets. It combines deterministic statistical computation with controlled LLM reasoning to deliver evidence-based insights instead of generic summaries.
 
-## Overview
+The system is built for data analysts and ML practitioners who want structured, explainable, and repeatable analysis workflows — not chatbot-style exploration.
 
-This is a **goal-driven, event-driven, LangGraph-style multi-agent analytics system** for arbitrary structured datasets.
+---
 
-**Not** a simple EDA tool or ChatGPT-over-pandas wrapper.
+## What This Project Does
 
-## Architecture
+This platform allows a user to:
 
-- **Backend**: FastAPI with event-driven graph orchestration
-- **Frontend**: React (Vite + TypeScript)
-- **State Management**: Single `StudioState` object flowing through graph
-- **LLM Usage**: Only for reasoning/planning (not execution)
-- **Execution**: Deterministic tools (pandas, scikit-learn, plotly)
+- Upload structured datasets (CSV, Excel, HTML) up to 100MB  
+- Automatically profile and assess data quality  
+- Detect missing value issues and apply deterministic treatments  
+- Classify dataset domain and structure  
+- Ask analysis questions in natural language  
+- Run statistical driver analysis on selected outcome variables  
+- Receive structured, evidence-backed insights  
+
+The system separates computation from reasoning:
+
+- All statistics, correlations, hypothesis testing, and modeling are deterministic (pandas, scipy, scikit-learn).
+- LLMs are used only for intent classification, structured reasoning, and insight synthesis.
+- No raw data is ever processed inside the LLM.
+
+---
+
+## Core Design Principles
+
+- Deterministic analytics first  
+- Strict typed outputs (Pydantic models)  
+- State-driven workflow using phase transitions  
+- Modular agent architecture  
+- Clear separation between computation and explanation  
+- Production-style API structure  
+
+This is not an exploratory notebook replacement.  
+It is a structured analytics engine with progressive state transitions.
+
+---
+
+## High-Level Workflow
+
+1. Upload dataset  
+2. Data ingestion and profiling  
+3. Domain inference and dataset summary  
+4. Missing value treatment loop  
+5. User submits analytical goal  
+6. System parses intent and detects target variable  
+7. Deterministic statistical testing and driver ranking  
+8. Structured insight synthesis  
+
+Each stage updates a controlled session state model.
+
+---
+
+## Tech Stack
+
+### Backend
+- FastAPI  
+- Pydantic v2  
+- pandas  
+- scipy  
+- scikit-learn  
+- OpenAI-compatible LLM SDK  
+
+### Frontend
+- React  
+- TypeScript  
+- Vite  
+- Tailwind CSS  
+- Recharts  
+
+---
 
 ## Project Structure
 
-Key directories:
-- `backend/`: FastAPI backend, agents, graph orchestrator
-- `frontend/`: React frontend (Vite, TypeScript)
-- `backend/state/`: `StudioState` model
-- `backend/agents/`: Agent implementations
-- `backend/graph/`: Event-driven orchestrator
-- `backend/tools/`: Deterministic tools
+backend/
+frontend/
+data/
+tests/
 
-## 🚀 Getting Started
 
-### Prerequisites
+Key backend components:
 
-- Python 3.10+
-- Node.js 18+ and npm
-- pip
+- `state.py` — central session state model  
+- `graph.py` — phase orchestration  
+- `profiling.py` — deterministic dataset profiling  
+- `missing_value_treatment.py` — treatment engine  
+- `intent_parser.py` — structured intent detection  
+- `statistical_engine.py` — hypothesis testing  
+- `driver_ranking.py` — feature strength scoring  
+- `insight_synthesis.py` — structured explanation layer  
 
-### Installation
+---
 
-1. Clone the repository
-2. Create virtual environment:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Create `.env` file (optional):
-   ```bash
-   cp .env.example .env
-   # Edit .env with your settings
-   ```
+## Running the Project
 
-### Running the Application
+### Backend
 
-1. **Start Backend** (Terminal 1):
-   ```bash
-   cd backend
-   python main.py
-   ```
-   API will be available at `http://localhost:8000`
-   API docs at `http://localhost:8000/docs`
+```bash
+python -m venv .venv
+.venv\Scripts\activate  # Windows
+pip install -r requirements.txt
+python backend/main.py
 
-2. **Start Frontend** (Terminal 2):
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
-   Frontend will be available at `http://localhost:5173` (Vite dev server proxies `/api` to the backend)
+``` 
 
-## 🔷 Design Principles
+### Frontend
 
-1. **LLM Never Executes Code**: LLM only reasons, plans, synthesizes
-2. **Deterministic Execution**: All data operations use pandas/scikit-learn directly
-3. **Event-Driven Graph**: Agents update shared state, not direct calls
-4. **Structured Outputs**: All agent outputs validated via Pydantic
-5. **Incremental Build**: Phase-by-phase implementation with testing
+```bash
+cd frontend
+npm install
+npm run dev
+
+```
+
+---
+
+## Environment Configuration
+
+Key environment variables:
+
+- USE_LLM
+- LLM_PROVIDER
+- LLM_MODEL
+- LLM_BASE_URL
+- LLM_API_KEY
+- MAX_FILE_SIZE_MB
+- UPLOAD_DIR
+- REPORTS_DIR
+
+See .env for reference.
 
