@@ -2,13 +2,13 @@
 
 A production-style multi-agent AI system for Data Analyst and ML/AI roles.
 
-## 🎯 Overview
+## Overview
 
 This is a **goal-driven, event-driven, LangGraph-style multi-agent analytics system** for arbitrary structured datasets.
 
-**Not** a simple EDA tool or ChatGPT-over-pandas wrapper. This is a serious, production-style system.
+**Not** a simple EDA tool or ChatGPT-over-pandas wrapper.
 
-## 🏗️ Architecture
+## Architecture
 
 - **Backend**: FastAPI with event-driven graph orchestration
 - **Frontend**: React (Vite + TypeScript)
@@ -16,11 +16,7 @@ This is a **goal-driven, event-driven, LangGraph-style multi-agent analytics sys
 - **LLM Usage**: Only for reasoning/planning (not execution)
 - **Execution**: Deterministic tools (pandas, scikit-learn, plotly)
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed design.
-
-## 📁 Project Structure
-
-See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for full structure.
+## Project Structure
 
 Key directories:
 - `backend/`: FastAPI backend, agents, graph orchestrator
@@ -73,29 +69,6 @@ Key directories:
    npm run dev
    ```
    Frontend will be available at `http://localhost:5173` (Vite dev server proxies `/api` to the backend)
-
-## 📊 Current Status
-
-### ✅ Phase 1: Data Ingestion (COMPLETE)
-- File upload (CSV, Excel, HTML)
-- Data validation
-- Basic state management
-- Graph orchestrator skeleton
-
-### 🚧 Phase 2: Profiling (TODO)
-- Statistical profiling agent
-- Pattern detection agent
-- Domain inference agent (LLM)
-- Initial insight agent (LLM)
-
-### 🚧 Phase 3: Goal-Driven Analysis (TODO)
-- Intent parser agent (LLM)
-- Analysis planner agent (LLM)
-- Execution engine agent
-- Insight generator agent (LLM)
-- Recommendation agent (LLM)
-- Report generator agent
-- Evaluation agent
 
 ## 🔷 Design Principles
 
